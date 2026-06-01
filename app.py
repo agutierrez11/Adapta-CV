@@ -29,9 +29,8 @@ with st.sidebar:
     
     provider = st.radio("Motor de IA:", ["groq", "deepseek"])
     
-    # Secrets o Input
-    default_key = st.secrets.get(f"{provider.upper()}_API_KEY", "")
-    api_key = st.text_input(f"API Key de {provider.capitalize()}:", value=default_key, type="password")
+    # Obtener API Key de Secrets directamente
+    api_key = st.secrets.get(f"{provider.upper()}_API_KEY", "")
     
     st.markdown("---")
     template = st.selectbox("🎨 Plantilla de Diseño:", ["Clásico", "Moderno", "Minimalista"])
@@ -67,7 +66,7 @@ st.markdown("---")
 
 if st.button("🚀 Generar CV Optimizado", type="primary", use_container_width=True):
     if not api_key:
-        st.error(f"Por favor configura la API Key de {provider} en la barra lateral.")
+        st.error(f"Por favor configura la API Key de {provider.upper()} en los Secrets de Streamlit Cloud.")
     elif not cv_text or not job_desc:
         st.error("Falta tu CV o la descripción del empleo.")
     else:
