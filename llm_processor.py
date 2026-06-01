@@ -55,13 +55,59 @@ class CVOptimizer:
     def search_jobs(self, query: str, location: str = "Remote", results: int = 5) -> pd.DataFrame:
         """Busca empleos en múltiples plataformas usando jobspy."""
         try:
+            loc_lower = location.lower().strip()
+            is_remote = False
+            
+            # Detectar si se busca puesto remoto/teletrabajo
+            if any(x in loc_lower for x in ["remot", "teletrabajo", "home office", "distancia"]):
+                is_remote = True
+                
+            # Determinar país y ubicación geográfica para los buscadores
+            country_clean = "mexico"  # Default para LATAM
+            location_search = "Mexico"
+            
+            if any(x in loc_lower for x in ["spain", "españa", "es"]):
+                country_clean = "spain"
+                location_search = "Spain"
+            elif any(x in loc_lower for x in ["mexico", "méxico", "mx"]):
+                country_clean = "mexico"
+                location_search = "Mexico"
+            elif any(x in loc_lower for x in ["colombia", "co"]):
+                country_clean = "colombia"
+                location_search = "Colombia"
+            elif any(x in loc_lower for x in ["argentina", "ar"]):
+                country_clean = "argentina"
+                location_search = "Argentina"
+            elif any(x in loc_lower for x in ["chile", "cl"]):
+                country_clean = "chile"
+                location_search = "Chile"
+            elif any(x in loc_lower for x in ["peru", "perú", "pe"]):
+                country_clean = "peru"
+                location_search = "Peru"
+            elif any(x in loc_lower for x in ["usa", "united states", "eeuu", "ee.uu", "us"]):
+                country_clean = "usa"
+                location_search = "United States"
+            else:
+                # Si no especifica país y sólo dice "remoto" o similar
+                if is_remote:
+                    country_clean = "mexico"
+                    location_search = "Mexico"
+                else:
+                    if location:
+                        country_clean = "mexico"
+                        location_search = location
+                    else:
+                        country_clean = "mexico"
+                        location_search = "Mexico"
+
             jobs = scrape_jobs(
                 site_name=["linkedin", "indeed", "glassdoor", "zip_recruiter"],
                 search_term=query,
-                location=location,
+                location=location_search,
                 results_wanted=results,
                 hours_old=72,
-                country_indeed='spain' if location.lower() == 'spain' else 'usa',
+                country_indeed=country_clean,
+                is_remote=is_remote
             )
             # Seleccionamos solo las columnas interesantes
             if not jobs.empty:
