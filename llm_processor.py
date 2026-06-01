@@ -1,9 +1,11 @@
 import json
 import os
+import pandas as pd
 from typing import Optional, Literal, List
 from openai import OpenAI
 from pydantic import BaseModel, Field
 import trafilatura
+from jobspy import scrape_jobs
 
 class CVExperience(BaseModel):
     job_title: str
@@ -19,8 +21,8 @@ class CVEducation(BaseModel):
 class OptimizedCV(BaseModel):
     full_name: str
     email: str
-    phone: Optional[str] = None
-    location: Optional[str] = None
+    phone: Optional[str] = ""
+    location: Optional[str] = ""
     professional_summary: str
     key_skills: list[str]
     experience: list[CVExperience]
@@ -50,65 +52,71 @@ class CVOptimizer:
             
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
+    def search_jobs(self, query: str, location: str = "Remote", results: int = 5) -> pd.DataFrame:
+        """Busca empleos en múltiples plataformas usando jobspy."""
+        try:
+            jobs = scrape_jobs(
+                site_name=["linkedin", "indeed", "glassdoor", "zip_recruiter"],
+                search_term=query,
+                location=location,
+                results_wanted=results,
+                hours_old=72,
+                country_indeed='spain' if location.lower() == 'spain' else 'usa',
+            )
+            # Seleccionamos solo las columnas interesantes
+            if not jobs.empty:
+                return jobs[['title', 'company', 'location', 'job_url', 'site']]
+            return pd.DataFrame()
+        except Exception as e:
+            print(f"Error buscando empleos: {e}")
+            return pd.DataFrame()
+
     def extract_job_from_url(self, url: str) -> str:
+        if not url: return ""
         downloaded = trafilatura.fetch_url(url)
         if downloaded:
             content = trafilatura.extract(downloaded)
-            return content if content else "No se pudo extraer el contenido de la URL."
-        return "No se pudo acceder a la URL."
+            return content if content else "No se pudo extraer el contenido automáticamente."
+        return "Error de acceso a la URL."
 
     def optimize_cv(self, cv_text: str, job_description: str, language: str = "es") -> OptimizedCV:
-        system_prompt = "You are an expert ATS resume optimizer. Respond ONLY with valid JSON."
-        user_prompt = f"Optimize this CV for this job description in {language}. CV: {cv_text} | Job: {job_description}"
+        system_prompt = f"Expert ATS optimizer. Return JSON with EXACTLY: 'full_name', 'email', 'phone', 'location', 'professional_summary', 'key_skills', 'experience', 'education', 'languages', 'certifications'. Content in {language}."
+        user_prompt = f"CV: {cv_text} | Job: {job_description}"
         
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             response_format={"type": "json_object"} if self.provider == "groq" else None
         )
         
         content = response.choices[0].message.content
-        return OptimizedCV(**json.loads(content[content.find('{'):content.rfind('}')+1]))
+        data = json.loads(content[content.find('{'):content.rfind('}')+1])
+        if len(data) == 1 and isinstance(list(data.values())[0], dict):
+            data = list(data.values())[0]
+        return OptimizedCV(**data)
 
     def analyze_ats(self, cv_text: str, job_description: str, language: str = "es") -> ATSAnalysis:
-        system_prompt = "You are an ATS (Applicant Tracking System) simulator. Analyze the match between the CV and the job description. Respond ONLY with valid JSON."
-        user_prompt = f"""
-        Language: {language}
-        Analyze the match between this CV and Job Description.
-        CV: {cv_text}
-        Job: {job_description}
-        
-        Return a JSON with:
-        - match_score: (0-100)
-        - missing_keywords: (list of important keywords from job not in CV)
-        - suggestions: (how to improve the match)
-        - strengths: (what matches well)
-        """
+        system_prompt = "ATS Analyzer. Return JSON with: 'match_score', 'missing_keywords', 'suggestions', 'strengths'."
+        user_prompt = f"CV: {cv_text} | Job: {job_description}"
         
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
             response_format={"type": "json_object"} if self.provider == "groq" else None
         )
         
         content = response.choices[0].message.content
-        return ATSAnalysis(**json.loads(content[content.find('{'):content.rfind('}')+1]))
+        data = json.loads(content[content.find('{'):content.rfind('}')+1])
+        if len(data) == 1 and isinstance(list(data.values())[0], dict):
+            data = list(data.values())[0]
+        return ATSAnalysis(**data)
 
     def generate_cover_letter(self, cv_text: str, job_description: str, language: str = "es") -> str:
-        system_prompt = "You are an expert career coach. Write a persuasive, professional cover letter."
-        user_prompt = f"Write a cover letter in {language} based on this CV and job description. CV: {cv_text} | Job: {job_description}"
-        
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": "Write a professional cover letter."},
+                {"role": "user", "content": f"Language: {language}. CV: {cv_text} | Job: {job_description}"}
             ]
         )
         return response.choices[0].message.content

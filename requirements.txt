@@ -8,4 +8,6 @@ python-dotenv
 requests
 beautifulsoup4
 trafilatura
+python-jobspy
+pandas
 pypdf
