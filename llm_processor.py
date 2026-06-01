@@ -128,21 +128,24 @@ class CVOptimizer:
         )
         
         # Llamar a DeepSeek API
-        response = self.client.beta.messages.create(
+        response = self.client.chat.completions.create(
             model="deepseek-chat",
             max_tokens=2000,
             messages=[
+                {
+                    "role": "system",
+                    "content": config["system_prompt"]
+                },
                 {
                     "role": "user",
                     "content": user_message
                 }
             ],
-            system=config["system_prompt"],
             temperature=0.7
         )
         
         # Extraer JSON de la respuesta
-        response_text = response.content[0].text
+        response_text = response.choices[0].message.content
         
         # Intentar parsear JSON
         try:
