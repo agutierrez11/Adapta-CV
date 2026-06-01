@@ -80,7 +80,34 @@ class CVOptimizer:
         return "Error de acceso a la URL."
 
     def optimize_cv(self, cv_text: str, job_description: str, language: str = "es") -> OptimizedCV:
-        system_prompt = f"Expert ATS optimizer. Return JSON with EXACTLY: 'full_name', 'email', 'phone', 'location', 'professional_summary', 'key_skills', 'experience', 'education', 'languages', 'certifications'. Content in {language}."
+        system_prompt = f"""You are an expert ATS resume optimizer. 
+Content must be in {language}. 
+Respond ONLY with a valid JSON matching this exact structure:
+{{
+    "full_name": "Full Name",
+    "email": "email@example.com",
+    "phone": "+123456789",
+    "location": "City, Country",
+    "professional_summary": "Summary aligned with the job description.",
+    "key_skills": ["Skill 1", "Skill 2"],
+    "experience": [
+        {{
+            "job_title": "Job Title",
+            "company": "Company Name",
+            "duration": "Dates (e.g., Enero 2020 - Presente)",
+            "achievements": ["Achievement 1", "Achievement 2"]
+        }}
+    ],
+    "education": [
+        {{
+            "degree": "Degree Name",
+            "institution": "Institution Name",
+            "year": "Graduation Year (e.g., 2020)"
+        }}
+    ],
+    "languages": ["Spanish (Native)", "English (Advanced)"],
+    "certifications": ["Certification Name - Issuer - Year"]
+}}"""
         user_prompt = f"CV: {cv_text} | Job: {job_description}"
         
         response = self.client.chat.completions.create(
@@ -93,6 +120,62 @@ class CVOptimizer:
         data = json.loads(content[content.find('{'):content.rfind('}')+1])
         if len(data) == 1 and isinstance(list(data.values())[0], dict):
             data = list(data.values())[0]
+            
+        # Normalizar experiencia
+        if 'experience' in data and isinstance(data['experience'], list):
+            for exp in data['experience']:
+                if isinstance(exp, dict):
+                    if 'duration' not in exp or not exp['duration']:
+                        exp['duration'] = exp.get('dates') or exp.get('period') or exp.get('time') or exp.get('years') or "N/A"
+                    if 'achievements' not in exp:
+                        exp['achievements'] = []
+                    elif not isinstance(exp['achievements'], list):
+                        exp['achievements'] = [str(exp['achievements'])]
+                        
+        # Normalizar educación
+        if 'education' in data and isinstance(data['education'], list):
+            for edu in data['education']:
+                if isinstance(edu, dict):
+                    if 'year' not in edu or not edu['year']:
+                        edu['year'] = edu.get('dates') or edu.get('year') or edu.get('date') or edu.get('graduated') or "N/A"
+                        
+        # Normalizar idiomas (languages)
+        if 'languages' in data and isinstance(data['languages'], list):
+            normalized_languages = []
+            for lang in data['languages']:
+                if isinstance(lang, dict):
+                    name = lang.get('language') or lang.get('name') or lang.get('idioma') or ""
+                    level = lang.get('level') or lang.get('proficiency') or lang.get('nivel') or ""
+                    if name and level:
+                        normalized_languages.append(f"{name} ({level})")
+                    elif name:
+                        normalized_languages.append(name)
+                elif isinstance(lang, str):
+                    normalized_languages.append(lang)
+            data['languages'] = normalized_languages
+            
+        # Normalizar certificaciones
+        if 'certifications' in data and isinstance(data['certifications'], list):
+            normalized_certs = []
+            for cert in data['certifications']:
+                if isinstance(cert, dict):
+                    name = cert.get('name') or cert.get('title') or cert.get('nombre') or ""
+                    issuer = cert.get('issuer') or cert.get('authority') or cert.get('institution') or ""
+                    year = cert.get('year') or cert.get('date') or ""
+                    parts = [name]
+                    if issuer: parts.append(issuer)
+                    if year: parts.append(year)
+                    normalized_certs.append(" - ".join(filter(None, parts)))
+                elif isinstance(cert, str):
+                    normalized_certs.append(cert)
+            data['certifications'] = normalized_certs
+
+        # Asegurar campos obligatorios u opcionales
+        if 'phone' not in data or data['phone'] is None:
+            data['phone'] = ""
+        if 'location' not in data or data['location'] is None:
+            data['location'] = ""
+            
         return OptimizedCV(**data)
 
     def analyze_ats(self, cv_text: str, job_description: str, language: str = "es") -> ATSAnalysis:
