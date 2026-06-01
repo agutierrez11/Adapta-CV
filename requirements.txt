@@ -5,4 +5,7 @@ weasyprint
 jinja2
 pydantic
 python-dotenv
+requests
+beautifulsoup4
+trafilatura
 pypdf

@@ -1,7 +1,6 @@
 import json
 import os
-import requests
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from openai import OpenAI
 from pydantic import BaseModel, Field
 import trafilatura
@@ -29,8 +28,11 @@ class OptimizedCV(BaseModel):
     languages: list[str] = []
     certifications: list[str] = []
 
-class CoverLetter(BaseModel):
-    content: str = Field(..., description="Contenido completo de la carta de presentación")
+class ATSAnalysis(BaseModel):
+    match_score: int = Field(..., ge=0, le=100)
+    missing_keywords: List[str]
+    suggestions: List[str]
+    strengths: List[str]
 
 class CVOptimizer:
     def __init__(self, provider: Literal["deepseek", "groq"] = "groq", api_key: Optional[str] = None):
@@ -70,6 +72,33 @@ class CVOptimizer:
         
         content = response.choices[0].message.content
         return OptimizedCV(**json.loads(content[content.find('{'):content.rfind('}')+1]))
+
+    def analyze_ats(self, cv_text: str, job_description: str, language: str = "es") -> ATSAnalysis:
+        system_prompt = "You are an ATS (Applicant Tracking System) simulator. Analyze the match between the CV and the job description. Respond ONLY with valid JSON."
+        user_prompt = f"""
+        Language: {language}
+        Analyze the match between this CV and Job Description.
+        CV: {cv_text}
+        Job: {job_description}
+        
+        Return a JSON with:
+        - match_score: (0-100)
+        - missing_keywords: (list of important keywords from job not in CV)
+        - suggestions: (how to improve the match)
+        - strengths: (what matches well)
+        """
+        
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"} if self.provider == "groq" else None
+        )
+        
+        content = response.choices[0].message.content
+        return ATSAnalysis(**json.loads(content[content.find('{'):content.rfind('}')+1]))
 
     def generate_cover_letter(self, cv_text: str, job_description: str, language: str = "es") -> str:
         system_prompt = "You are an expert career coach. Write a persuasive, professional cover letter."
