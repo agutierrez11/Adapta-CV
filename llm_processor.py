@@ -109,6 +109,18 @@ class CVOptimizer:
         data = json.loads(content[content.find('{'):content.rfind('}')+1])
         if len(data) == 1 and isinstance(list(data.values())[0], dict):
             data = list(data.values())[0]
+            
+        # Normalizar match_score si el LLM devuelve una fracción (ej: 0.8 en lugar de 80)
+        if 'match_score' in data:
+            try:
+                score = float(data['match_score'])
+                if 0.0 <= score <= 1.0:
+                    data['match_score'] = int(score * 100)
+                else:
+                    data['match_score'] = int(round(score))
+            except Exception:
+                data['match_score'] = 0
+                
         return ATSAnalysis(**data)
 
     def generate_cover_letter(self, cv_text: str, job_description: str, language: str = "es") -> str:
