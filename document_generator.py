@@ -1,6 +1,6 @@
 """
 Módulo para generar documentos Word y PDF a partir de CV optimizado.
-Genera formatos ATS-friendly con una sola columna.
+Genera formatos ATS-friendly con estilos personalizables (Clásico, Moderno, Minimalista).
 """
 
 import io
@@ -17,43 +17,74 @@ from llm_processor import OptimizedCV
 class DocumentGenerator:
     """Generador de documentos Word y PDF para CVs optimizados"""
     
-    # Estilos ATS-friendly
-    FONT_NAME = "Calibri"
-    FONT_SIZE_BODY = 11
-    FONT_SIZE_HEADING = 12
-    FONT_SIZE_NAME = 16
-    MARGIN_INCHES = 0.75
-    LINE_SPACING = 1.0
-    
     @staticmethod
-    def generate_word(cv: OptimizedCV, output_path: Optional[str] = None) -> bytes:
+    def generate_word(cv: OptimizedCV, template: str = "Clásico", output_path: Optional[str] = None) -> bytes:
         """
-        Genera un archivo Word (.docx) ATS-friendly.
-        
-        Args:
-            cv: Objeto OptimizedCV con los datos del CV
-            output_path: Ruta donde guardar el archivo (opcional)
-        
-        Returns:
-            bytes: Contenido del archivo Word
+        Genera un archivo Word (.docx) ATS-friendly con la plantilla seleccionada.
         """
         doc = Document()
         
+        # Configurar estilos de plantilla
+        template_lower = template.lower()
+        if "modern" in template_lower:
+            font_name = "Arial"
+            font_size_name = 18
+            font_size_heading = 13
+            font_size_body = 11
+            color_heading = RGBColor(31, 119, 180)  # #1f77b4
+            margin_inches = 0.75
+            align_name = WD_ALIGN_PARAGRAPH.LEFT
+        elif "minim" in template_lower:
+            font_name = "Georgia"
+            font_size_name = 16
+            font_size_heading = 11
+            font_size_body = 10.5
+            color_heading = RGBColor(80, 80, 80)  # Gris carbón
+            margin_inches = 1.0
+            align_name = WD_ALIGN_PARAGRAPH.CENTER
+        else:  # Clásico
+            font_name = "Calibri"
+            font_size_name = 16
+            font_size_heading = 12
+            font_size_body = 11
+            color_heading = RGBColor(0, 0, 0)  # Negro
+            margin_inches = 0.75
+            align_name = WD_ALIGN_PARAGRAPH.CENTER
+            
         # Configurar márgenes
-        sections = doc.sections
-        for section in sections:
-            section.top_margin = Inches(DocumentGenerator.MARGIN_INCHES)
-            section.bottom_margin = Inches(DocumentGenerator.MARGIN_INCHES)
-            section.left_margin = Inches(DocumentGenerator.MARGIN_INCHES)
-            section.right_margin = Inches(DocumentGenerator.MARGIN_INCHES)
+        for section in doc.sections:
+            section.top_margin = Inches(margin_inches)
+            section.bottom_margin = Inches(margin_inches)
+            section.left_margin = Inches(margin_inches)
+            section.right_margin = Inches(margin_inches)
         
-        # Nombre
-        name_para = doc.add_paragraph()
-        name_run = name_para.add_run(cv.full_name)
-        name_run.font.size = Pt(DocumentGenerator.FONT_SIZE_NAME)
-        name_run.font.bold = True
-        name_run.font.name = DocumentGenerator.FONT_NAME
-        name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Helper para agregar párrafos con formato uniforme
+        def add_formatted_para(text="", font_size=font_size_body, bold=False, italic=False, color=None, style='Normal', align=WD_ALIGN_PARAGRAPH.LEFT):
+            para = doc.add_paragraph(style=style)
+            para.alignment = align
+            if text:
+                run = para.add_run(text)
+                run.font.name = font_name
+                run.font.size = Pt(font_size)
+                run.font.bold = bold
+                run.font.italic = italic
+                if color:
+                    run.font.color.rgb = color
+            return para
+
+        # Helper para agregar textos en el mismo párrafo con diferentes formatos
+        def add_run_to_para(para, text, font_size=font_size_body, bold=False, italic=False, color=None):
+            run = para.add_run(text)
+            run.font.name = font_name
+            run.font.size = Pt(font_size)
+            run.font.bold = bold
+            run.font.italic = italic
+            if color:
+                run.font.color.rgb = color
+            return run
+
+        # Nombre completo
+        add_formatted_para(cv.full_name, font_size=font_size_name, bold=True, color=color_heading, align=align_name)
         
         # Información de contacto
         contact_info = []
@@ -65,118 +96,63 @@ class DocumentGenerator:
             contact_info.append(cv.location)
         
         if contact_info:
-            contact_para = doc.add_paragraph(" | ".join(contact_info))
-            contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in contact_para.runs:
-                run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                run.font.name = DocumentGenerator.FONT_NAME
+            add_formatted_para(" | ".join(contact_info), font_size=font_size_body - 1, align=align_name)
         
         doc.add_paragraph()  # Espacio en blanco
         
         # Resumen profesional
         if cv.professional_summary:
-            summary_heading = doc.add_paragraph("PROFESSIONAL SUMMARY")
-            summary_heading.runs[0].font.bold = True
-            summary_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            summary_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
-            summary_para = doc.add_paragraph(cv.professional_summary)
-            for run in summary_para.runs:
-                run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                run.font.name = DocumentGenerator.FONT_NAME
+            add_formatted_para("PROFESSIONAL SUMMARY", font_size=font_size_heading, bold=True, color=color_heading)
+            add_formatted_para(cv.professional_summary, font_size=font_size_body)
             doc.add_paragraph()
         
         # Habilidades clave
         if cv.key_skills:
-            skills_heading = doc.add_paragraph("KEY SKILLS")
-            skills_heading.runs[0].font.bold = True
-            skills_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            skills_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
-            skills_para = doc.add_paragraph(", ".join(cv.key_skills))
-            for run in skills_para.runs:
-                run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                run.font.name = DocumentGenerator.FONT_NAME
+            add_formatted_para("KEY SKILLS", font_size=font_size_heading, bold=True, color=color_heading)
+            add_formatted_para(", ".join(cv.key_skills), font_size=font_size_body)
             doc.add_paragraph()
         
         # Experiencia laboral
         if cv.experience:
-            exp_heading = doc.add_paragraph("PROFESSIONAL EXPERIENCE")
-            exp_heading.runs[0].font.bold = True
-            exp_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            exp_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
+            add_formatted_para("PROFESSIONAL EXPERIENCE", font_size=font_size_heading, bold=True, color=color_heading)
             for exp in cv.experience:
-                # Título y empresa
-                job_para = doc.add_paragraph()
-                job_run = job_para.add_run(f"{exp.job_title} | {exp.company}")
-                job_run.font.bold = True
-                job_run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                job_run.font.name = DocumentGenerator.FONT_NAME
+                # Puesto y Empresa
+                job_para = add_formatted_para()
+                add_run_to_para(job_para, f"{exp.job_title} | {exp.company}", font_size=font_size_body, bold=True)
                 
                 # Duración
-                duration_para = doc.add_paragraph(exp.duration)
-                for run in duration_para.runs:
-                    run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY - 1)
-                    run.font.name = DocumentGenerator.FONT_NAME
-                    run.font.italic = True
+                dur_para = add_formatted_para()
+                add_run_to_para(dur_para, exp.duration, font_size=font_size_body - 1, italic=True)
                 
                 # Logros
                 for achievement in exp.achievements:
-                    achievement_para = doc.add_paragraph(achievement, style='List Bullet')
-                    for run in achievement_para.runs:
-                        run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                        run.font.name = DocumentGenerator.FONT_NAME
-            
+                    ach_para = doc.add_paragraph(style='List Bullet')
+                    add_run_to_para(ach_para, achievement, font_size=font_size_body)
             doc.add_paragraph()
         
         # Educación
         if cv.education:
-            edu_heading = doc.add_paragraph("EDUCATION")
-            edu_heading.runs[0].font.bold = True
-            edu_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            edu_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
+            add_formatted_para("EDUCATION", font_size=font_size_heading, bold=True, color=color_heading)
             for edu in cv.education:
-                edu_para = doc.add_paragraph()
-                degree_run = edu_para.add_run(f"{edu.degree} | {edu.institution}")
-                degree_run.font.bold = True
-                degree_run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                degree_run.font.name = DocumentGenerator.FONT_NAME
+                edu_para = add_formatted_para()
+                add_run_to_para(edu_para, f"{edu.degree} | {edu.institution}", font_size=font_size_body, bold=True)
                 
-                year_para = doc.add_paragraph(f"Graduated: {edu.year}")
-                for run in year_para.runs:
-                    run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY - 1)
-                    run.font.name = DocumentGenerator.FONT_NAME
-                    run.font.italic = True
-            
+                year_para = add_formatted_para()
+                add_run_to_para(year_para, f"Graduated: {edu.year}", font_size=font_size_body - 1, italic=True)
             doc.add_paragraph()
         
         # Idiomas
         if cv.languages:
-            lang_heading = doc.add_paragraph("LANGUAGES")
-            lang_heading.runs[0].font.bold = True
-            lang_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            lang_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
-            lang_para = doc.add_paragraph(", ".join(cv.languages))
-            for run in lang_para.runs:
-                run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                run.font.name = DocumentGenerator.FONT_NAME
+            add_formatted_para("LANGUAGES", font_size=font_size_heading, bold=True, color=color_heading)
+            add_formatted_para(", ".join(cv.languages), font_size=font_size_body)
             doc.add_paragraph()
         
         # Certificaciones
         if cv.certifications:
-            cert_heading = doc.add_paragraph("CERTIFICATIONS")
-            cert_heading.runs[0].font.bold = True
-            cert_heading.runs[0].font.size = Pt(DocumentGenerator.FONT_SIZE_HEADING)
-            cert_heading.runs[0].font.name = DocumentGenerator.FONT_NAME
-            
+            add_formatted_para("CERTIFICATIONS", font_size=font_size_heading, bold=True, color=color_heading)
             for cert in cv.certifications:
-                cert_para = doc.add_paragraph(cert, style='List Bullet')
-                for run in cert_para.runs:
-                    run.font.size = Pt(DocumentGenerator.FONT_SIZE_BODY)
-                    run.font.name = DocumentGenerator.FONT_NAME
+                cert_para = doc.add_paragraph(style='List Bullet')
+                add_run_to_para(cert_para, cert, font_size=font_size_body)
         
         # Guardar o retornar bytes
         if output_path:
@@ -190,76 +166,187 @@ class DocumentGenerator:
             return buffer.getvalue()
     
     @staticmethod
-    def generate_pdf(cv: OptimizedCV, output_path: Optional[str] = None) -> bytes:
+    def generate_pdf(cv: OptimizedCV, template: str = "Clásico", output_path: Optional[str] = None) -> bytes:
         """
-        Genera un archivo PDF ATS-friendly usando HTML + CSS.
-        
-        Args:
-            cv: Objeto OptimizedCV con los datos del CV
-            output_path: Ruta donde guardar el archivo (opcional)
-        
-        Returns:
-            bytes: Contenido del archivo PDF
+        Genera un archivo PDF ATS-friendly usando HTML + CSS adaptado a la plantilla.
         """
         html_content = DocumentGenerator._generate_html(cv)
-        
-        # Crear HTML
         html_obj = HTML(string=html_content)
         
-        # CSS para ATS-friendly
-        css_str = """
-        @page {
-            margin: 0.75in;
-            size: letter;
-        }
-        body {
-            font-family: Calibri, Arial, sans-serif;
-            font-size: 11pt;
-            line-height: 1.0;
-            color: #000;
-        }
-        h1 {
-            font-size: 16pt;
-            font-weight: bold;
-            text-align: center;
-            margin: 0 0 5pt 0;
-        }
-        .contact-info {
-            text-align: center;
-            font-size: 10pt;
-            margin-bottom: 10pt;
-        }
-        h2 {
-            font-size: 12pt;
-            font-weight: bold;
-            margin: 10pt 0 5pt 0;
-            border-bottom: 1px solid #000;
-            padding-bottom: 2pt;
-        }
-        .job-title {
-            font-weight: bold;
-            font-size: 11pt;
-            margin: 5pt 0 2pt 0;
-        }
-        .company {
-            font-style: italic;
-            font-size: 10pt;
-            margin: 0 0 3pt 0;
-        }
-        ul {
-            margin: 3pt 0 5pt 20pt;
-            padding: 0;
-        }
-        li {
-            margin: 2pt 0;
-            font-size: 11pt;
-        }
-        .skills {
-            margin: 5pt 0;
-            font-size: 11pt;
-        }
-        """
-        
+        template_lower = template.lower()
+        if "modern" in template_lower:
+            css_str = """
+            @page {
+                margin: 0.75in;
+                size: letter;
+            }
+            body {
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: 11pt;
+                line-height: 1.15;
+                color: #222;
+            }
+            h1 {
+                font-size: 18pt;
+                font-weight: bold;
+                color: #1f77b4;
+                text-align: left;
+                margin: 0 0 5pt 0;
+            }
+            .contact-info {
+                text-align: left;
+                font-size: 10pt;
+                color: #555;
+                margin-bottom: 12pt;
+            }
+            h2 {
+                font-size: 13pt;
+                font-weight: bold;
+                color: #1f77b4;
+                margin: 15pt 0 6pt 0;
+                border-bottom: 2px solid #1f77b4;
+                padding-bottom: 3pt;
+                text-transform: uppercase;
+            }
+            .job-title {
+                font-weight: bold;
+                font-size: 11pt;
+                margin: 6pt 0 1pt 0;
+            }
+            .company {
+                font-style: italic;
+                font-size: 10pt;
+                color: #555;
+                margin: 0 0 4pt 0;
+            }
+            ul {
+                margin: 2pt 0 6pt 15pt;
+                padding: 0;
+            }
+            li {
+                margin: 2pt 0;
+                font-size: 10.5pt;
+            }
+            .skills {
+                margin: 4pt 0;
+                font-size: 11pt;
+            }
+            """
+        elif "minim" in template_lower:
+            css_str = """
+            @page {
+                margin: 1.0in;
+                size: letter;
+            }
+            body {
+                font-family: Georgia, serif;
+                font-size: 10.5pt;
+                line-height: 1.2;
+                color: #333;
+            }
+            h1 {
+                font-size: 16pt;
+                font-weight: normal;
+                color: #000;
+                text-align: center;
+                margin: 0 0 5pt 0;
+                letter-spacing: 0.05em;
+            }
+            .contact-info {
+                text-align: center;
+                font-size: 9.5pt;
+                color: #666;
+                margin-bottom: 15pt;
+            }
+            h2 {
+                font-size: 11pt;
+                font-weight: bold;
+                color: #555;
+                margin: 18pt 0 8pt 0;
+                text-align: center;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                border-bottom: none;
+            }
+            .job-title {
+                font-weight: bold;
+                font-size: 10.5pt;
+                margin: 8pt 0 1pt 0;
+            }
+            .company {
+                font-style: italic;
+                font-size: 9.5pt;
+                color: #666;
+                margin: 0 0 4pt 0;
+            }
+            ul {
+                margin: 3pt 0 6pt 12pt;
+                padding: 0;
+            }
+            li {
+                margin: 3pt 0;
+                font-size: 10.5pt;
+            }
+            .skills {
+                margin: 5pt 0;
+                font-size: 10.5pt;
+                text-align: justify;
+            }
+            """
+        else:  # Clásico
+            css_str = """
+            @page {
+                margin: 0.75in;
+                size: letter;
+            }
+            body {
+                font-family: Calibri, Arial, sans-serif;
+                font-size: 11pt;
+                line-height: 1.0;
+                color: #000;
+            }
+            h1 {
+                font-size: 16pt;
+                font-weight: bold;
+                text-align: center;
+                margin: 0 0 5pt 0;
+            }
+            .contact-info {
+                text-align: center;
+                font-size: 10pt;
+                margin-bottom: 10pt;
+            }
+            h2 {
+                font-size: 12pt;
+                font-weight: bold;
+                margin: 10pt 0 5pt 0;
+                border-bottom: 1px solid #000;
+                padding-bottom: 2pt;
+            }
+            .job-title {
+                font-weight: bold;
+                font-size: 11pt;
+                margin: 5pt 0 2pt 0;
+            }
+            .company {
+                font-style: italic;
+                font-size: 10pt;
+                margin: 0 0 3pt 0;
+            }
+            ul {
+                margin: 3pt 0 5pt 20pt;
+                padding: 0;
+            }
+            li {
+                margin: 2pt 0;
+                font-size: 11pt;
+            }
+            .skills {
+                margin: 5pt 0;
+                font-size: 11pt;
+            }
+            """
+            
         css_obj = CSS(string=css_str)
         
         # Generar PDF
@@ -275,7 +362,7 @@ class DocumentGenerator:
     
     @staticmethod
     def _generate_html(cv: OptimizedCV) -> str:
-        """Genera el HTML para el PDF"""
+        """Genera el HTML base para el PDF"""
         html_template = """
 <!DOCTYPE html>
 <html>
